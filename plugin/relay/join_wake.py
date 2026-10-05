@@ -26,7 +26,7 @@ async def wake_queued_phone(payload: dict[str, Any], count: int) -> bool:
     try:
         process = await asyncio.create_subprocess_exec(
             sys.executable, str(script), f'Hermes: {count} waiting', preview,
-            '--tier', 'urgent', '--tag', 'relay-queue', '--url', url,
+            '--tier', 'urgent', '--channel', 'hermes-relay', '--tag', 'relay-queue', '--url', url,
             '--actions', json.dumps(actions),
             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
         )

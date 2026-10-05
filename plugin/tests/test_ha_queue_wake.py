@@ -76,3 +76,4 @@ class QueueWakeTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('one\ntwo',args)
         self.assertIn('relay-queue',args)
         self.assertIn('--actions',args)
+        self.assertEqual(args[args.index('--channel')+1],'hermes-relay')
