@@ -84,6 +84,8 @@ from typing import Any
 
 from aiohttp import web
 
+from ..join_wake import QUEUE_WAIT_SECONDS, WAKE_THROTTLE_SECONDS, wake_queued_phone
+
 logger = logging.getLogger(__name__)
 
 # Bound the inbound reply buffer so a phone replying while the gateway poller
@@ -175,6 +177,9 @@ class ProactiveChannel:
         # Bounded + drop-oldest; stale entries pruned on flush.
         self._outbound: deque[dict[str, Any]] = deque(maxlen=MAX_BUFFERED_OUTBOUND)
         self.queued_count: int = 0
+        # LOCAL ONLY: delayed HA wake; message delivery remains Relay-owned.
+        self._wake_task: asyncio.Task[None] | None = None
+        self._last_wake_at: float | None = None
 
     # ── Envelope dispatch (inbound from phone) ───────────────────────────
 
@@ -304,6 +309,7 @@ class ProactiveChannel:
         if ws is None or ws.closed:
             self._outbound.append(out_payload)
             self.queued_count += 1
+            self._ensure_queue_wake()
             logger.info(
                 "proactive >>> queued (no subscriber) message_id=%s chat=%s (buffered=%d)",
                 message_id,
@@ -333,6 +339,33 @@ class ProactiveChannel:
         )
         return {"delivered": True, "message_id": message_id}
 
+    def _ensure_queue_wake(self) -> None:
+        if self._wake_task is None or self._wake_task.done():
+            self._wake_task = asyncio.create_task(self._queue_wake_loop())
+
+    async def _check_queue_wake(self) -> bool:
+        if self.is_phone_subscribed() or not self._outbound:
+            return False
+        now = time.time()
+        pending = [m for m in self._outbound
+                   if now - m['sent_at'] / 1000 < OUTBOUND_TTL_SECONDS]
+        if not pending or now - pending[0]['sent_at'] / 1000 < QUEUE_WAIT_SECONDS:
+            return False
+        if self._last_wake_at is not None and now - self._last_wake_at < WAKE_THROTTLE_SECONDS:
+            return False
+        # Throttle attempts too, so HA outages cannot cause repeated wake requests.
+        self._last_wake_at = now
+        try:
+            return await wake_queued_phone(pending[0], len(pending))
+        except Exception:
+            logger.exception('local HA queued-message wake failed')
+            return False
+
+    async def _queue_wake_loop(self) -> None:
+        while self._outbound:
+            await asyncio.sleep(30)
+            await self._check_queue_wake()
+
     async def _flush_outbound(self, ws: web.WebSocketResponse) -> None:
         """Deliver queued outbound messages to a freshly-subscribed phone.
 
@@ -341,6 +374,9 @@ class ProactiveChannel:
         If the socket dies mid-flush, the remaining (incl. the one that failed)
         are re-buffered for the next subscribe instead of lost.
         """
+        if self._wake_task is not None:
+            self._wake_task.cancel()
+            self._wake_task = None
         if not self._outbound:
             return
         pending = list(self._outbound)
@@ -373,6 +409,7 @@ class ProactiveChannel:
                 )
                 for leftover in pending[i:]:
                     self._outbound.append(leftover)
+                self._ensure_queue_wake()
                 break
         if flushed:
             # Ordered after every delivered phone.message. Older clients ignore
@@ -419,6 +456,9 @@ class ProactiveChannel:
         if message_id is None:
             n = len(self._outbound)
             self._outbound.clear()
+            if self._wake_task is not None:
+                self._wake_task.cancel()
+                self._wake_task = None
             return n
         before = len(self._outbound)
         kept = [m for m in self._outbound if m.get("message_id") != message_id]

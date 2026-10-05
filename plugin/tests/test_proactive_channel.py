@@ -47,7 +47,7 @@ class _FakeWs:
 
 
 def _run(coro):
-    return asyncio.new_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 class ProactiveChannelTests(unittest.TestCase):
