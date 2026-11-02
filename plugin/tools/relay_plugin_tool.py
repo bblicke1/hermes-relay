@@ -15,6 +15,16 @@ def relay_plugin_draft(
     description: str = "",
     lifecycle: str = "session",
 ) -> dict[str, Any]:
+    # Android renders the page whose id equals the contribution (plugin) id
+    # and silently shows nothing otherwise. Align a single-page draft.
+    pages = document.get("pages") if isinstance(document, dict) else None
+    if (
+        isinstance(pages, list)
+        and len(pages) == 1
+        and isinstance(pages[0], dict)
+        and pages[0].get("id") != plugin_id
+    ):
+        document = {**document, "pages": [{**pages[0], "id": plugin_id}]}
     try:
         return MobilePluginStore().draft(
             plugin_id,
@@ -88,6 +98,8 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
                     "type": "object",
                     "description": (
                         "Schema-version-1 PluginDocument JSON. Use schemaVersion=1 and pages. "
+                        "Android shows the page whose id equals plugin_id (single-page "
+                        "drafts are aligned automatically). "
                         "Each page needs id, title ({type: literal, value: ...} or a binding), "
                         "and content. Supported content types are group, card, text, badge, "
                         "button, text_input, toggle, progress, image, divider, and spacer. "

@@ -60,6 +60,10 @@ class RelayPluginToolTests(unittest.TestCase):
         removed = json.loads(_HANDLERS["relay_plugin_remove"]({"plugin_id": "tool-page"}))
         self.assertTrue(removed["ok"])
 
+    def test_single_page_id_is_aligned_to_plugin_id(self) -> None:
+        drafted = relay_plugin_draft("tool-page", "Tool Page", self.document)
+        self.assertEqual("tool-page", drafted["document"]["pages"][0]["id"])
+
     def test_invalid_document_returns_structured_error(self) -> None:
         result = relay_plugin_draft("bad", "Bad", {"schemaVersion": 1, "pages": []})
         self.assertIn("error", result)
