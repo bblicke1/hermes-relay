@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from plugin.tools.relay_plugin_tool import (
+    _HANDLERS,
     relay_plugin_draft,
     relay_plugin_list,
     relay_plugin_publish,
@@ -43,6 +45,20 @@ class RelayPluginToolTests(unittest.TestCase):
         self.assertTrue(publish["approval_required"])
         self.assertEqual("draft", relay_plugin_list()["plugins"][0]["status"])
         self.assertTrue(relay_plugin_remove("tool-page")["ok"])
+
+    def test_registered_handlers_return_json_strings(self) -> None:
+        drafted = _HANDLERS["relay_plugin_draft"](
+            {"plugin_id": "tool-page", "title": "Tool Page", "document": self.document}
+        )
+        self.assertIsInstance(drafted, str)
+        self.assertEqual("draft", json.loads(drafted)["status"])
+        listed = _HANDLERS["relay_plugin_list"]({})
+        self.assertIsInstance(listed, str)
+        self.assertEqual("tool-page", json.loads(listed)["plugins"][0]["id"])
+        published = json.loads(_HANDLERS["relay_plugin_publish"]({"plugin_id": "tool-page"}))
+        self.assertTrue(published["approval_required"])
+        removed = json.loads(_HANDLERS["relay_plugin_remove"]({"plugin_id": "tool-page"}))
+        self.assertTrue(removed["ok"])
 
     def test_invalid_document_returns_structured_error(self) -> None:
         result = relay_plugin_draft("bad", "Bad", {"schemaVersion": 1, "pages": []})

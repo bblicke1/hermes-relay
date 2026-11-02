@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+import json
+from typing import Any, Callable
 
 from ..mobile_plugin_store import MobilePluginStore, MobilePluginStoreError
 
@@ -153,11 +154,20 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
 }
 
 
+def _as_json(fn: Callable[..., dict[str, Any]]) -> Callable[..., str]:
+    """Hermes tool handlers must return a string; serialize the dict result."""
+
+    def handler(args: dict[str, Any], **kw: Any) -> str:
+        return json.dumps(fn(**args), default=str)
+
+    return handler
+
+
 _HANDLERS = {
-    "relay_plugin_draft": lambda args, **kw: relay_plugin_draft(**args),
-    "relay_plugin_publish": lambda args, **kw: relay_plugin_publish(**args),
-    "relay_plugin_remove": lambda args, **kw: relay_plugin_remove(**args),
-    "relay_plugin_list": lambda args, **kw: relay_plugin_list(),
+    "relay_plugin_draft": _as_json(relay_plugin_draft),
+    "relay_plugin_publish": _as_json(relay_plugin_publish),
+    "relay_plugin_remove": _as_json(relay_plugin_remove),
+    "relay_plugin_list": _as_json(relay_plugin_list),
 }
 
 
